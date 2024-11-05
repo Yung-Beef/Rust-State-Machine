@@ -1,36 +1,43 @@
+use num::traits::{CheckedAdd, CheckedSub, Zero};
 use std::collections::BTreeMap;
 
-#[derive(Debug)]
-pub struct Pallet {
-    balances: BTreeMap<String, u128>,
+pub trait Config: crate::system::Config {
+    type Balance: Zero + CheckedAdd + CheckedSub + Copy;
 }
 
-impl Pallet {
+#[derive(Debug)]
+pub struct Pallet<T: Config> {
+    balances: BTreeMap<T::AccountId, T::Balance>,
+}
+
+impl<T: Config> Pallet<T> {
     pub fn new() -> Self {
         Self {
-            balances: BTreeMap::new(),
+            balances: BTreeMap::<T::AccountId, T::Balance>::new(),
         }
     }
 
-    pub fn set_balance(&mut self, who: &String, amount: u128) {
-        self.balances.insert(who.clone(), amount);
+    pub fn set_balance(&mut self, who: T::AccountId, amount: T::Balance) {
+        self.balances.insert(who, amount);
     }
 
-    pub fn balance(&self, who: &String) -> u128 {
-        *self.balances.get(who).unwrap_or(&0)
+    pub fn balance(&self, who: T::AccountId) -> T::Balance {
+        *self.balances.get(&who).unwrap_or(&Zero::zero())
     }
 
     pub fn transfer(
         &mut self,
-        caller: String,
-        to: String,
-        amount: u128,
+        caller: T::AccountId,
+        to: T::AccountId,
+        amount: T::Balance,
     ) -> Result<(), &'static str> {
-        let caller_old = self.balance(&caller);
-        let to_old = self.balance(&to);
+        let caller_old = self.balance(caller.clone());
+        let to_old = self.balance(to.clone());
 
-        let caller_new = caller_old.checked_sub(amount).ok_or("Insufficient funds")?;
-        let to_new = to_old.checked_add(amount).ok_or("Overflow")?;
+        let caller_new = caller_old
+            .checked_sub(&amount)
+            .ok_or("Insufficient funds")?;
+        let to_new = to_old.checked_add(&amount).ok_or("Overflow")?;
 
         self.balances.insert(caller, caller_new);
         self.balances.insert(to, to_new);
@@ -41,28 +48,39 @@ impl Pallet {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn init_balances() {
-        let mut balances = super::Pallet::new();
-
-        assert_eq!(balances.balance(&"alice".to_string()), 0);
-        balances.set_balance(&"alice".to_string(), 100);
-        assert_eq!(balances.balance(&"alice".to_string()), 100);
-        assert_eq!(balances.balance(&"bob".to_string()), 0);
+    struct TestConfig;
+	impl crate::system::Config for TestConfig {
+        type AccountId = String;
+		type BlockNumber = u32;
+		type Nonce = u32;
+	}
+    impl super::Config for TestConfig {
+        type Balance = u128;
     }
 
+    #[test]
+    fn init_balances() {
+        let mut balances = super::Pallet::<TestConfig>::new();
+
+        assert_eq!(balances.balance("alice".to_string()), 0);
+        balances.set_balance("alice".to_string(), 100);
+        assert_eq!(balances.balance("alice".to_string()), 100);
+        assert_eq!(balances.balance("bob".to_string()), 0);
+    }
+
+    #[test]
     fn test_transfer() {
-        let mut balances = super::Pallet::new();
+        let mut balances = super::Pallet::<TestConfig>::new();
 
-        balances.set_balance(&"alice".to_string(), 100);
-        assert_eq!(balances.balance(&"alice".to_string()), 100);
+        balances.set_balance("alice".to_string(), 100);
+        assert_eq!(balances.balance("alice".to_string()), 100);
 
-        balances.transfer(&"alice".to_string(), &"bob".to_string(), 50);
-        assert_eq!(balances.balance(&"alice".to_string()), 50);
-        assert_eq!(balances.balance(&"bob".to_string()), 50);
+        let _ = balances.transfer("alice".to_string(), "bob".to_string(), 50);
+        assert_eq!(balances.balance("alice".to_string()), 50);
+        assert_eq!(balances.balance("bob".to_string()), 50);
 
         assert_eq!(
-            balances.transfer(&"alice".to_string(), &"bob".to_string(), 100),
+            balances.transfer("alice".to_string(), "bob".to_string(), 100),
             Err("Insufficient funds")
         );
     }
