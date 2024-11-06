@@ -24,13 +24,16 @@ impl<T: Config> Pallet<T> {
     pub fn balance(&self, who: T::AccountId) -> T::Balance {
         *self.balances.get(&who).unwrap_or(&Zero::zero())
     }
+}
 
+#[macros::call]
+impl<T: Config> Pallet<T> {
     pub fn transfer(
         &mut self,
         caller: T::AccountId,
         to: T::AccountId,
         amount: T::Balance,
-    ) -> Result<(), &'static str> {
+    ) -> crate::support::DispatchResult {
         let caller_old = self.balance(caller.clone());
         let to_old = self.balance(to.clone());
 
@@ -49,11 +52,11 @@ impl<T: Config> Pallet<T> {
 #[cfg(test)]
 mod tests {
     struct TestConfig;
-	impl crate::system::Config for TestConfig {
+    impl crate::system::Config for TestConfig {
         type AccountId = String;
-		type BlockNumber = u32;
-		type Nonce = u32;
-	}
+        type BlockNumber = u32;
+        type Nonce = u32;
+    }
     impl super::Config for TestConfig {
         type Balance = u128;
     }
